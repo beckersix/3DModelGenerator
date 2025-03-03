@@ -503,3 +503,7 @@ class CommandInterpreter:
             return response
         else:
             return random.choice(responses["error"])
+
+
+
+

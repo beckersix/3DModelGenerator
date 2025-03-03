@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
 from command_interpreter import CommandInterpreter
-
+from learning_interface import LearningCommandInterpreter, run_learning_interface
 
 # Import modules
 from models import PointCloudNetwork, PointCloudGenerator, EnhancedPointCloudGenerator
@@ -229,9 +229,10 @@ def run_interactive_interface(shape_ai):
         print("4. Classify a point cloud (requires trained model)")
         print("5. Load 3D mesh models (FBX/OBJ/STL/etc.) and convert to point clouds")
         print("6. Natural language interface")
-        print("7. Exit")
+        print("7. Learning language interface (adapts to your commands)")
+        print("8. Exit")
         
-        choice = input("\nEnter your choice (1-7): ")
+        choice = input("\nEnter your choice (1-8): ")
         
         if choice == '1':
             # Generate a standard shape
@@ -581,16 +582,35 @@ def run_interactive_interface(shape_ai):
         elif choice == '6':
             # Natural language interface
             run_nlp_interface(shape_ai)
-            
+
         elif choice == '7':
+            # Run the learning language interface
+            model_dir = os.path.join(get_default_model_directory(), "learning")
+            run_learning_interface(shape_ai, model_dir)
+            
+        elif choice == '8':
             print("Exiting...")
             break
         
         else:
-            print("Invalid choice. Please enter a number between 1 and 7.")
+            print("Invalid choice. Please enter a number between 1 and 8.")
 
 def run_nlp_interface(shape_ai):
-    """Run the natural language interface for the 3D Shape AI."""
+    #\"\"\"Run the natural language interface for the 3D Shape AI.\"\"\"
+    print("\n=== Natural Language Interface ===")
+    print("Choose interface type:")
+    print("1. Standard interface")
+    print("2. Learning interface (adapts to your commands)")
+    
+    interface_choice = input("\nEnter choice (1-2, default: 1): ") or "1"
+    
+    if interface_choice == "2":
+        # Run the learning interface
+        model_dir = os.path.join(get_default_model_directory(), "learning")
+        run_learning_interface(shape_ai, model_dir)
+        return
+        
+    # Original standard interface code follows...
     interpreter = CommandInterpreter()
     
     print("\n=== Natural Language Interface ===")
