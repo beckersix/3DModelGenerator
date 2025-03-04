@@ -85,102 +85,96 @@ class ShapeAI:
         Returns:
             Generated point cloud as numpy array
         """
-        if self.generator is None:
-            raise ValueError("Generator model is not loaded")
-        
-        # Parse the description to see if it contains explicit shape parameters
-        shape_params = self._parse_shape_params(description)
-        
-        # If we have a direct shape request with parameters, use the standard generation functions
-        if shape_params is not None:
-            shape_name, params = shape_params
-            point_cloud = generate_point_cloud(shape_name, **params)
-            return point_cloud
-        
-        # Otherwise, use the trained generator model
-        # Encode the description
-        encoded_text = torch.tensor(self.tokenizer.encode(description)).unsqueeze(0).to(self.device)
-        
-        # Generate point cloud
-        self.generator.eval()
-        with torch.no_grad():
-            # Check if we're using the enhanced model by checking for multiple returns
-            try:
-                # Try with original generator first
-                generated = self.generator(encoded_text)
-                # If this is a single return value (the point cloud)
-                if not isinstance(generated, tuple):
-                    point_cloud = generated[0].cpu().numpy()
-                else:
-                    # It returned multiple values (point cloud and shape logits)
-                    point_cloud = generated[0][0].cpu().numpy()
-            except TypeError as e:
-                if "attention_mask" in str(e):
-                    # Enhanced generator requires attention mask
-                    attention_mask = torch.ones_like(encoded_text).to(self.device)
-                    result = self.generator(encoded_text, attention_mask=attention_mask)
-                    point_cloud = result[0][0].cpu().numpy()
-                else:
-                    # Some other error
-                    raise e
-        
-        return point_cloud
+        if not description:
+            raise ValueError("Description cannot be empty")
+            
+        try:
+            # First try to use the neural model for generation
+            if self.generator and self.tokenizer:
+                # Generate using the AI model
+                try:
+                    points = self.generate_shape(description)
+                    # Check if returned tensor and convert to numpy
+                    if isinstance(points, torch.Tensor):
+                        return points.squeeze(0).cpu().numpy()
+                    return points
+                except Exception as e:
+                    print(f"AI model generation failed, falling back to rule-based: {e}")
+            
+            # Fall back to rule-based generation
+            shape_info = self._parse_shape_params(description)
+            if shape_info:
+                shape_type, params = shape_info
+                return generate_point_cloud(shape_type, **params)
+            else:
+                # If no shape recognized, try to guess based on description
+                for shape in self.shape_types:
+                    if shape.lower() in description.lower():
+                        print(f"Generating default {shape} (no specific parameters found)")
+                        return generate_point_cloud(shape)
+                
+                # No recognizable shape in description, generate a cube as fallback
+                print("No specific shape recognized. Generating a default cube.")
+                return generate_point_cloud("cube")
+                
+        except Exception as e:
+            print(f"Error in shape generation: {e}")
+            # Last resort fallback
+            print("Falling back to default cube")
+            return generate_point_cloud("cube")
     
     def generate_shape(self, description):
         """
-        Generate a point cloud based on a text description.
+        Generate a point cloud from a text description using neural model.
         
         Args:
             description: Text description of the desired shape
             
         Returns:
-            Tensor containing the generated point cloud
+            Generated point cloud as numpy array
         """
-        if not self.generator or not self.tokenizer:
-            raise RuntimeError("Generator model or tokenizer not initialized")
+        if self.generator is None:
+            raise ValueError("Generator model not initialized")
             
-        # Convert description to tensor
-        tokens = self.tokenizer.encode(description.lower())
-        token_tensor = torch.tensor(tokens).unsqueeze(0).to(self.device)  # Add batch dimension
-        
-        # Generate point cloud
-        self.generator.eval()
-        with torch.no_grad():
-            try:
-                # Generate points using the model
-                result = self.generator(token_tensor)
-                
-                # Handle different return types (handle both tensor and tuple returns)
-                if isinstance(result, tuple):
-                    points = result[0]  # Extract the point cloud from the tuple
-                else:
-                    points = result
-                    
-                # Check if points is still a tuple (nested tuple case)
-                if isinstance(points, tuple):
-                    points = points[0]
-                
-                # Check if the points are empty
-                if points is None or (hasattr(points, 'numel') and points.numel() == 0):
-                    # Extract shape type from description
-                    shape_type = None
-                    for shape in self.shape_types:
-                        if shape in description.lower():
-                            shape_type = shape
-                            break
-                    
-                    if shape_type:
-                        # Generate basic shape
-                        points = generate_point_cloud(shape_type, num_points=1024)
-                        points = torch.tensor(points).float().unsqueeze(0).to(self.device)
+        try:
+            # Tokenize the description
+            encoded_text = self.tokenizer.encode(description)
+            encoded_tensor = torch.tensor(encoded_text).unsqueeze(0).to(self.device)
+            
+            # Generate point cloud using the model
+            self.generator.eval()
+            with torch.no_grad():
+                try:
+                    # First try the standard forward method
+                    output = self.generator(encoded_tensor)
+                    if isinstance(output, tuple):
+                        # Model returns (point_cloud, shape_logits)
+                        point_cloud = output[0]
                     else:
-                        raise ValueError(f"Could not determine shape type from description: {description}")
+                        # Model returns just point_cloud
+                        point_cloud = output
+                        
+                except Exception as e:
+                    if "attention_mask" in str(e):
+                        # Some models require attention mask
+                        attention_mask = torch.ones_like(encoded_tensor).to(self.device)
+                        output = self.generator(encoded_tensor, attention_mask=attention_mask)
+                        if isinstance(output, tuple):
+                            point_cloud = output[0]
+                        else:
+                            point_cloud = output
+                    else:
+                        raise e
+                        
+            # Extract points and convert to numpy
+            if isinstance(point_cloud, torch.Tensor):
+                point_cloud = point_cloud.squeeze(0).cpu().numpy()
                 
-                return points
-                
-            except Exception as e:
-                print(f"Error in shape generation: {e}")
-                raise
+            return point_cloud
+            
+        except Exception as e:
+            print(f"Error in neural generation: {e}")
+            return None
     
     def _parse_shape_params(self, text):
         """Parse shape parameters from text
@@ -193,22 +187,118 @@ class ShapeAI:
         """
         text = text.lower()
         
-        # Check if this is a direct shape request
-        for shape in self.shape_types:
-            if shape in text:
-                # Extract parameters using regex
-                params = {"num_points": 1024}  # Default number of points
-                
-                # Extract numeric parameters
-                for param_name, pattern in self.param_patterns.items():
-                    match = re.search(pattern, text)
-                    if match:
-                        params[param_name] = float(match.group(1))
-                
-                return shape, params
+        # Dictionary mapping shape variations to standard shapes
+        shape_variants = {
+            "cube": ["cube", "box", "square", "block"],
+            "rectangular_prism": ["rectangular prism", "rect prism", "rectangle", "rectangular", "brick", "block"],
+            "sphere": ["sphere", "ball", "orb", "globe"],
+            "cylinder": ["cylinder", "tube", "pipe", "column"],
+            "pyramid": ["pyramid", "triangular", "tetrahedron"],
+            "torus": ["torus", "donut", "doughnut", "ring"],
+            "cone": ["cone", "conical"],
+            "ellipsoid": ["ellipsoid", "oval", "egg", "elliptical"],
+            "capsule": ["capsule", "pill"],
+            "star": ["star", "stellated", "radial"],
+            "helix": ["helix", "spiral", "coil", "spring"]
+        }
         
-        # This is not a direct shape request with parameters
-        return None
+        # Check for shape types in the description
+        detected_shape = None
+        for shape_name, variants in shape_variants.items():
+            for variant in variants:
+                if variant in text:
+                    detected_shape = shape_name
+                    break
+            if detected_shape:
+                break
+        
+        if not detected_shape:
+            return None
+            
+        # Initialize parameters with defaults
+        params = {"num_points": 1024}
+        
+        # Extract size parameters
+        # General size parameter
+        size_match = re.search(r'size\s*[=:]\s*(\d+\.?\d*)', text) or re.search(r'(\d+\.?\d*)\s*(?:unit|size)', text)
+        if size_match:
+            params["size"] = float(size_match.group(1))
+        
+        # Extract specific dimensions
+        for param_name, pattern_list in {
+            "width": [r'width\s*[=:]\s*(\d+\.?\d*)', r'(\d+\.?\d*)\s*(?:units?|inches?|cm)?\s*wide'],
+            "height": [r'height\s*[=:]\s*(\d+\.?\d*)', r'(\d+\.?\d*)\s*(?:units?|inches?|cm)?\s*(?:tall|high)'],
+            "depth": [r'depth\s*[=:]\s*(\d+\.?\d*)', r'(\d+\.?\d*)\s*(?:units?|inches?|cm)?\s*deep'],
+            "radius": [r'radius\s*[=:]\s*(\d+\.?\d*)', r'(\d+\.?\d*)\s*(?:units?|inches?|cm)?\s*radius'],
+            "major_radius": [r'major[_\s]radius\s*[=:]\s*(\d+\.?\d*)', r'(\d+\.?\d*)\s*(?:units?|inches?|cm)?\s*major radius'],
+            "minor_radius": [r'minor[_\s]radius\s*[=:]\s*(\d+\.?\d*)', r'(\d+\.?\d*)\s*(?:units?|inches?|cm)?\s*minor radius'],
+            "base_size": [r'base[_\s]size\s*[=:]\s*(\d+\.?\d*)', r'base\s*(\d+\.?\d*)', r'(\d+\.?\d*)\s*(?:units?|inches?|cm)?\s*base'],
+        }.items():
+            for pattern in pattern_list:
+                match = re.search(pattern, text)
+                if match:
+                    params[param_name] = float(match.group(1))
+                    break
+        
+        # Extract noise level
+        noise_match = re.search(r'noise\s*[=:]\s*(\d+\.?\d*)', text) or re.search(r'(\d+\.?\d*)\s*noise', text)
+        if noise_match:
+            params["noise"] = float(noise_match.group(1))
+        else:
+            # Set a default noise value
+            params["noise"] = 0.05
+        
+        # Shape-specific parameter inference
+        if detected_shape == "rectangular_prism":
+            # Map to the correct parameter names for rectangular prism
+            if "width" in params:
+                params["size_x"] = params.pop("width")
+            if "height" in params:
+                params["size_y"] = params.pop("height")
+            if "depth" in params:
+                params["size_z"] = params.pop("depth")
+            # If only general size is given, create non-uniform dimensions
+            if "size" in params and "size_x" not in params:
+                base_size = params.pop("size")
+                params["size_x"] = base_size
+                params["size_y"] = base_size * 1.5  # Make it rectangular, not cubic
+                params["size_z"] = base_size * 0.8
+        
+        # Handle special cases for torus
+        if detected_shape == "torus" and "radius" in params and "major_radius" not in params:
+            params["major_radius"] = params.pop("radius")
+            params["minor_radius"] = params.get("minor_radius", params["major_radius"] / 3)
+        
+        # Handle special cases for cylinder
+        if detected_shape == "cylinder" and "height" not in params and "size" in params:
+            params["height"] = params["size"] * 2  # Default height is twice the size
+
+        # Handle adjectives that imply dimensions
+        if "tall" in text or "high" in text:
+            if detected_shape in ["cylinder", "cone", "pyramid"]:
+                params["height"] = params.get("height", 2.0) * 1.5
+        
+        if "wide" in text or "broad" in text:
+            if detected_shape in ["cylinder", "cone", "torus"]:
+                params["radius"] = params.get("radius", 1.0) * 1.5
+            elif detected_shape == "rectangular_prism":
+                params["size_x"] = params.get("size_x", 1.0) * 1.5
+        
+        if "thin" in text or "narrow" in text:
+            if detected_shape in ["cylinder", "cone", "torus"]:
+                params["radius"] = params.get("radius", 1.0) * 0.7
+        
+        # Handle hollow shapes
+        if "hollow" in text and detected_shape in ["sphere", "cylinder", "cube", "rectangular_prism"]:
+            params["hollow"] = True
+            params["shell_thickness"] = 0.1  # Default shell thickness
+            
+            # Extract shell thickness if specified
+            thickness_match = re.search(r'thickness\s*[=:]\s*(\d+\.?\d*)', text) or re.search(r'(\d+\.?\d*)\s*(?:units?|inches?|cm)?\s*thick', text)
+            if thickness_match:
+                params["shell_thickness"] = float(thickness_match.group(1))
+        
+        return (detected_shape, params)
     
     def save(self, directory):
         """Save models and tokenizer

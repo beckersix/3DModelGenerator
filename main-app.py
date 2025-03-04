@@ -8,15 +8,60 @@ import torch
 import numpy as np
 import argparse
 from torch.utils.data import DataLoader
+import matplotlib.pyplot as plt
+import random
 
 from models import PointCloudNetwork, EnhancedPointCloudGenerator
-from data_utils import SimpleTokenizer, ShapeDataset
+from data_utils import SimpleTokenizer, ShapeDataset, load_training_data, generate_enhanced_training_data
 from command_interpreter import CommandInterpreter
 from shape_ai import ShapeAI
 from shape_generation import visualize_point_cloud
+from training import train_classifier, train_enhanced_generator, train_generator, train_adaptive_generator
 
 # Set environment variables
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
+def simple_train_test_split(data_list, labels_list, descriptions_list=None, test_size=0.2, random_state=None):
+    """
+    Simple implementation of train_test_split function to avoid sklearn dependency.
+    
+    Args:
+        data_list: List of data points
+        labels_list: List of labels
+        descriptions_list: Optional list of descriptions
+        test_size: Proportion of data to use for testing (0.0 to 1.0)
+        random_state: Optional random seed for reproducibility
+        
+    Returns:
+        train_data, test_data, train_labels, test_labels, train_descriptions, test_descriptions
+    """
+    if random_state is not None:
+        random.seed(random_state)
+        
+    # Create indices and shuffle them
+    indices = list(range(len(data_list)))
+    random.shuffle(indices)
+    
+    # Calculate split point
+    split_idx = int(len(indices) * (1 - test_size))
+    
+    train_indices = indices[:split_idx]
+    test_indices = indices[split_idx:]
+    
+    # Split data and labels
+    train_data = [data_list[i] for i in train_indices]
+    test_data = [data_list[i] for i in test_indices]
+    
+    train_labels = [labels_list[i] for i in train_indices]
+    test_labels = [labels_list[i] for i in test_indices]
+    
+    # Split descriptions if provided
+    if descriptions_list is not None:
+        train_descriptions = [descriptions_list[i] for i in train_indices]
+        test_descriptions = [descriptions_list[i] for i in test_indices]
+        return train_data, test_data, train_labels, test_labels, train_descriptions, test_descriptions
+    
+    return train_data, test_data, train_labels, test_labels
 
 def main(args):
     """Main function to run the 3D Shape AI application."""
@@ -44,7 +89,7 @@ def main(args):
         tokenizer.build_vocab(descriptions)
         
         # Split data into train and validation sets
-        train_clouds, val_clouds, train_labels, val_labels, train_descs, val_descs = train_test_split(
+        train_clouds, val_clouds, train_labels, val_labels, train_descs, val_descs = simple_train_test_split(
             point_clouds, shape_labels, descriptions, test_size=0.2, random_state=42)
         
         # Create datasets and dataloaders for classifier
@@ -208,30 +253,56 @@ def main(args):
                 
                 print("\nWelcome to 3D Shape Generator!")
                 print("Tell me what kind of shape you want to create.")
-                print("Example commands:")
-                print("- 'create a large sphere'")
-                print("- 'generate a tall cylinder'")
-                print("- 'make a cube with smooth edges'")
-                print("Type 'quit' to exit.")
+                print("\nExample commands:")
+                print("- Simple shape names: 'cube', 'sphere', 'cylinder'")
+                print("- Shape with description: 'create a large sphere'")
+                print("- Detailed parameters: 'generate a tall cylinder with radius=0.8'")
+                print("- Complex descriptions: 'make a hollow cube with size=1.5'")
+                print("\nType 'help' for more information or 'quit' to exit.")
                 
                 while True:
                     try:
                         command = input("\nEnter your command: ").strip()
                         
+                        if not command:
+                            continue
+                            
                         if command.lower() in ['quit', 'exit', 'bye']:
                             print("Goodbye!")
                             break
+                        
+                        if command.lower() in ['help', 'commands', '?']:
+                            print("\nAvailable commands:")
+                            print("- Basic shapes: cube, sphere, cylinder, pyramid, torus, cone")
+                            print("- Create shapes: 'create a [shape]', 'generate a [shape]', 'make a [shape]'")
+                            print("- Parameters: Add size, radius, height, etc. (e.g., 'cube size=2.0')")
+                            print("- Properties: Add descriptors like large, small, tall, wide, etc.")
+                            print("- Help: 'help', 'commands', '?'")
+                            print("- Quit: 'quit', 'exit', 'bye'")
+                            continue
                             
                         # Interpret command and generate shape
                         points, shape_type, properties = command_interpreter.interpret_and_generate(command, shape_ai)
                         
                         if points is not None:
-                            print(f"\nGenerated a {shape_type} shape with properties: {properties}")
+                            # Display properties in a readable format
+                            props_display = {}
+                            for k, v in properties.items():
+                                if isinstance(v, float):
+                                    props_display[k] = round(v, 2)
+                                else:
+                                    props_display[k] = v
+                                    
+                            print(f"\nGenerated a {shape_type} shape with properties: {props_display}")
+                            
+                            # Convert to numpy if it's a tensor
+                            points_np = points.cpu().numpy() if isinstance(points, torch.Tensor) else points
                             
                             # Visualize the generated point cloud
-                            visualize_point_cloud(points.cpu().numpy())
+                            visualize_point_cloud(points_np, title=f"Generated {shape_type}")
                         else:
                             print("Sorry, I couldn't understand that command. Please try again.")
+                            print("Type 'help' to see available commands.")
                             
                     except KeyboardInterrupt:
                         print("\nGoodbye!")

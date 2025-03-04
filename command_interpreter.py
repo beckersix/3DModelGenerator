@@ -3,6 +3,7 @@ Simple natural language command interpreter for 3D Shape AI.
 """
 import re
 import random
+import torch
 
 class CommandInterpreter:
     def __init__(self):
@@ -473,7 +474,19 @@ class CommandInterpreter:
         Returns:
             tuple: (generated_points, shape_type, properties)
         """
-        command = command.lower()
+        command = command.lower().strip()
+        
+        # Handle single word shape commands directly
+        if command in ["cube", "sphere", "cylinder", "pyramid", "torus", "cone"]:
+            print(f"Generating a {command}...")
+            try:
+                generated_points = shape_ai.generate(command)
+                if isinstance(generated_points, torch.Tensor):
+                    return generated_points, command, {}
+                return torch.tensor(generated_points), command, {}
+            except Exception as e:
+                print(f"Error generating {command}: {e}")
+                return None, None, None
         
         # Try to match creation patterns
         creation_command = None
@@ -486,19 +499,38 @@ class CommandInterpreter:
                     creation_command = match.group(1)
                 break
         
+        # If no creation pattern matched, check if it contains a shape name directly
         if not creation_command:
-            return None, None, None
+            shape_type = self._find_shape_type(command)
+            if shape_type:
+                creation_command = command
+            else:
+                return None, None, None
             
         # Extract shape type and properties
         shape_type = self._find_shape_type(creation_command)
         properties = self._extract_properties(creation_command)
         
         # If no specific shape type found, use the entire command for generation
-        generation_prompt = creation_command if not shape_type else f"{shape_type} {' '.join(f'{k}={v}' for k,v in properties.items())}"
+        if not shape_type:
+            generation_prompt = creation_command
+        else:
+            # Convert properties to parameters suitable for the shape
+            params = self._convert_to_shape_parameters(shape_type, properties)
+            
+            # Format the generation prompt with parameters
+            param_str = " ".join(f"{k}={v}" for k, v in params.items() if k != "num_points")
+            generation_prompt = f"{shape_type} {param_str}".strip()
         
         try:
             # Generate point cloud using ShapeAI
-            generated_points = shape_ai.generate_shape(generation_prompt)
+            print(f"Generating from prompt: {generation_prompt}")
+            generated_points = shape_ai.generate(generation_prompt)
+            
+            # Convert to tensor if it's not already
+            if not isinstance(generated_points, torch.Tensor):
+                generated_points = torch.tensor(generated_points, dtype=torch.float32)
+                
             return generated_points, shape_type or "custom", properties
         except Exception as e:
             print(f"Error generating shape: {e}")

@@ -1,11 +1,13 @@
-# 3D Mesh Model Loader for Point Cloud Conversion
+# 3D Model Generator
+
+A powerful AI-based tool for generating, classifying, and manipulating 3D shapes using natural language commands.
 
 ## Installation Requirements
 
-To use the 3D mesh model loader, you'll need to install the following dependencies:
+To use the 3D Model Generator, you'll need to install the following dependencies:
 
 ```bash
-pip install trimesh numpy matplotlib
+pip install torch numpy matplotlib trimesh tqdm
 ```
 
 For additional mesh format support, install these optional dependencies:
@@ -33,92 +35,80 @@ The mesh loader supports the following 3D model formats:
 
 ## Usage
 
-1. Place your 3D model files in a directory
-2. Run the application in interactive mode:
+1. Run the application in interactive mode:
    ```
-   python main.py
+   python main-app.py
    ```
-3. Choose option 5: "Load 3D mesh models and convert to point clouds"
-4. Follow the prompts to specify:
-   - Directory containing your 3D models
-   - Number of points to sample per model
-   - Sampling method (surface or vertex)
-   - Noise level
-   - Output directory for saving point clouds
-
-## How It Works
-
-The loader operates in these steps:
-1. Scans a directory for 3D model files
-2. Loads each file using the trimesh library
-3. Converts meshes to point clouds using either:
-   - Surface sampling: samples points on the model's surface
-   - Vertex sampling: uses the model's vertices directly
-4. Normalizes coordinates and applies an optional noise level
-5. Allows you to preview and save the resulting point clouds
-
-
-# 3D Shape AI Project Directory Structure
+2. Enter natural language commands to generate shapes, such as:
+   - "Create a cube"
+   - "Generate a tall cylindrical tower"
+   - "Make a hollow sphere with radius 5"
 
 ## Directory Structure
 
-The application now uses a standardized directory structure for storing models and data:
+The application uses a standardized directory structure:
 
 ```
 3DModelGenerator/
-├── models/                   # Default directory for trained models
+├── models/                   # Trained models
 │   ├── classifier.pth        # Trained classifier model
 │   ├── generator.pth         # Trained generator model
 │   ├── tokenizer.json        # Tokenizer vocabulary
 │   └── shape_types.json      # Available shape types
 │
+├── reference_models/         # Place your 3D model files here for training
+│   └── *.obj, *.fbx, etc.    # Your 3D models for reference
+│
 ├── training_data/            # Training data for models
 │   ├── pointcloud_*.npy      # Individual point cloud files
 │   └── metadata.json         # Training data metadata
 │
-├── converted_models/         # Default directory for converted 3D models
-│   └── *.npy                 # Converted point clouds
+├── data/                     # Processed data
+│   └── *.npy                 # Processed point clouds
 │
-├── main.py                   # Main application entry point
+├── main-app.py               # Main application entry point
 ├── models.py                 # Neural network model definitions
 ├── shape_generation.py       # Shape generation functions
 ├── data_utils.py             # Dataset and data handling utilities
-├── shape_ai.py               # Main API combining components
-├── training.py               # Training functions
+├── shape_ai.py               # Main AI engine combining components
+├── command_interpreter.py    # Natural language command processor
+├── point_cloud_processor.py  # Point cloud processing utilities
 └── fbx_loader.py             # 3D mesh model loader
 ```
 
-## Automatic Directory Management
+## Training with Your Own Models
 
-The application now:
+To train the system with your own 3D models:
 
-1. Automatically creates these directories if they don't exist
-2. Saves models to the default `models/` directory unless specified otherwise
-3. Uses consistent paths for loading models in interactive mode
-4. Saves converted 3D models to `converted_models/` by default
+1. Place your 3D model files (.obj, .fbx, .stl, etc.) in the `reference_models/` directory
+2. Run the application in training mode:
+   ```
+   python main-app.py --mode train
+   ```
+3. The system will:
+   - Convert your 3D models to point clouds
+   - Train the classifier and generator models
+   - Save the trained models to the `models/` directory
 
-## Command-Line Options
+## Model Generation
 
-You can still specify custom directories when needed:
+The system generates 3D models in these ways:
 
-```bash
-# Use custom directories
-python main.py --mode train --data_dir custom_data --model_dir custom_models
-
-# Use default directories
-python main.py --mode train
-```
-
-## Locating Your Files
-
-- **Trained Models**: Located in the `models/` directory
-- **Converted 3D Models**: Located in the `converted_models/` directory
-- **Training Data**: Located in the `training_data/` directory
-
-All paths are relative to the application's main directory, making it easy to find your files regardless of where you run the application from.
+1. **Basic Shape Generation**: Creates geometric primitives based on parameters from your text
+2. **AI-Based Generation**: Uses trained models to generate complex shapes based on descriptions
+3. **Adaptive Generation**: Creates variations of existing models by adapting them to your specifications
 
 ## Troubleshooting
 
-- **Import errors**: Make sure you have installed trimesh and the appropriate format-specific dependencies
+- **No point cloud generated**: Make sure your shape description contains parameters or a recognized shape type
 - **Loading failures**: Some complex models may not load correctly; try a different format if available
-- **Memory issues**: Very large models may require reducing the number of points
+- **Memory issues**: Very large models may require reducing the number of points 
+
+## Adding More Training Data
+
+For best results when generating models:
+
+- Add diverse 3D models to the `reference_models/` directory
+- Include models of various categories (furniture, vehicles, architecture, etc.)
+- Use models with clean topology and reasonable polygon counts
+- Name files descriptively to help with classification
