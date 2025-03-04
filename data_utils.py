@@ -81,6 +81,35 @@ class PointCloudDataset(Dataset):
             return point_cloud
 
 
+class ShapeDataset(PointCloudDataset):
+    """
+    Dataset specifically for 3D shape point clouds and shape labels
+    This is a subclass of PointCloudDataset that provides specialized
+    functionality for working with geometric shapes.
+    """
+    def __init__(self, point_clouds, labels, transform=None, num_points=1024):
+        """
+        Initialize a dataset for 3D shape point clouds
+        
+        Args:
+            point_clouds: List of point cloud arrays (each of shape (n, 3))
+            labels: List of integer labels (shape indices)
+            transform: Optional transform to apply to point clouds
+            num_points: Target number of points for each point cloud
+        """
+        super().__init__(point_clouds, labels, transform, num_points)
+
+    def __getitem__(self, idx):
+        """
+        Get a point cloud and its corresponding shape label
+        
+        Returns:
+            point_cloud: Tensor of shape (num_points, 3)
+            label: Tensor containing the shape label
+        """
+        return super().__getitem__(idx)
+
+
 class SimpleTokenizer:
     def __init__(self, vocab_size=5000):
         self.vocab_size = vocab_size

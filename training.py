@@ -6,6 +6,12 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 from tqdm import tqdm
+from point_cloud_processor import (
+    AdaptivePointCloudGenerator,
+    process_point_cloud,
+    extract_metadata
+)
+from training_manager import ModelTrainer
 
 
 def train_classifier(model, train_dataloader, val_dataloader=None, 
@@ -435,3 +441,37 @@ def train_generator(model, tokenizer, point_clouds, descriptions,
             print(f"Epoch {epoch+1}/{num_epochs} - Loss: {epoch_loss:.6f}")
     
     return model, history
+
+def train_adaptive_generator(point_clouds, descriptions=None, shape_labels=None,
+                           batch_size=16, num_epochs=100, learning_rate=0.0005,
+                           model_dir="models", device=None):
+    """Train the adaptive point cloud generator model
+    
+    Args:
+        point_clouds: List of point cloud arrays or paths to 3D model files
+        descriptions: Optional list of text descriptions for semantic guidance
+        shape_labels: Optional list of shape labels for supervision
+        batch_size: Batch size for training
+        num_epochs: Number of training epochs
+        learning_rate: Learning rate for optimization
+        model_dir: Directory to save model checkpoints
+        device: Device to train on ('cuda' or 'cpu')
+    
+    Returns:
+        Trained ModelTrainer instance
+    """
+    trainer = ModelTrainer(model_dir=model_dir, device=device)
+    
+    # Process point clouds if they are file paths
+    if isinstance(point_clouds[0], str):
+        dataset = trainer.prepare_training_data(point_clouds)
+    else:
+        # Use existing point clouds
+        labels = np.arange(len(point_clouds)) if shape_labels is None else shape_labels
+        metadata = [extract_metadata(pc) for pc in point_clouds]
+        dataset = PointCloudDataset(np.array(point_clouds), np.array(labels), metadata)
+    
+    # Train the model
+    trainer.train(dataset, batch_size=batch_size, epochs=num_epochs, learning_rate=learning_rate)
+    
+    return trainer

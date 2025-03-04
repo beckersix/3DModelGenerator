@@ -1,1 +1,1 @@
-C:\Users\Justin\Documents\PROG10004\MyPersonalPythonWork\3DModelGenerator\model
+C:\Users\Justin\Documents\PROG10004\MyPersonalPythonWork\3DModelGenerator\models

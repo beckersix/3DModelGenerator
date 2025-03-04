@@ -79,7 +79,15 @@ class CommandInterpreter:
             r"(i('m| am) done)",
             r"(goodbye|bye|farewell|adios)"
         ]
-    
+        
+        # Add adaptive generation patterns
+        self.adaptive_patterns = [
+            r"(?:create|generate|make)\s+(?:a\s+)?(?:new\s+)?(?:3d\s+)?model\s+(?:of\s+)?(?:a\s+)?(.+?)(?:\s+like|similar to|based on)\s+(.+)",
+            r"(?:create|generate|make)\s+(?:a\s+)?(?:new\s+)?variation\s+of\s+(.+)",
+            r"adapt\s+(?:the\s+)?model\s+(.+)\s+to\s+(?:create|make|generate)\s+(.+)",
+            r"learn\s+from\s+(.+)\s+(?:and|to)\s+(?:create|generate|make)\s+(.+)"
+        ]
+
     def _find_shape_type(self, text):
         """
         Identify the shape type mentioned in the text.
@@ -403,6 +411,28 @@ class CommandInterpreter:
                     "path_info": path_info
                 }
         
+        # Check for adaptive generation commands
+        for pattern in self.adaptive_patterns:
+            match = re.search(pattern, text)
+            if match:
+                if len(match.groups()) == 2:
+                    target_desc, reference_model = match.groups()
+                    return {
+                        'command': 'generate',
+                        'type': 'adaptive',
+                        'target_description': target_desc.strip(),
+                        'reference_model': reference_model.strip(),
+                        'variations': self._extract_variations(text)
+                    }
+                else:
+                    model_path = match.group(1)
+                    return {
+                        'command': 'generate',
+                        'type': 'variation',
+                        'model_path': model_path.strip(),
+                        'variations': self._extract_variations(text)
+                    }
+        
         # If no patterns matched but shape is mentioned, default to creation
         shape_type = self._find_shape_type(text)
         if shape_type:
@@ -421,6 +451,59 @@ class CommandInterpreter:
             "description": text
         }
     
+    def _extract_variations(self, text):
+        """Extract number of variations from text"""
+        variations = 1  # default
+        
+        # Look for explicit number of variations
+        var_match = re.search(r'(\d+)\s+variations?', text)
+        if var_match:
+            variations = int(var_match.group(1))
+        
+        return variations
+    
+    def interpret_and_generate(self, command, shape_ai):
+        """
+        Interpret user command and generate appropriate 3D shape using ShapeAI.
+        
+        Args:
+            command: User's natural language command
+            shape_ai: Instance of ShapeAI for generation
+            
+        Returns:
+            tuple: (generated_points, shape_type, properties)
+        """
+        command = command.lower()
+        
+        # Try to match creation patterns
+        creation_command = None
+        for pattern in self.creation_patterns:
+            match = re.search(pattern, command)
+            if match:
+                if len(match.groups()) > 1:
+                    creation_command = match.group(2)
+                else:
+                    creation_command = match.group(1)
+                break
+        
+        if not creation_command:
+            return None, None, None
+            
+        # Extract shape type and properties
+        shape_type = self._find_shape_type(creation_command)
+        properties = self._extract_properties(creation_command)
+        
+        # If no specific shape type found, use the entire command for generation
+        generation_prompt = creation_command if not shape_type else f"{shape_type} {' '.join(f'{k}={v}' for k,v in properties.items())}"
+        
+        try:
+            # Generate point cloud using ShapeAI
+            generated_points = shape_ai.generate_shape(generation_prompt)
+            return generated_points, shape_type or "custom", properties
+        except Exception as e:
+            print(f"Error generating shape: {e}")
+            return None, None, None
+
     def generate_response(self, command_result):
         """
         Generate a natural language response to the command.
@@ -503,7 +586,3 @@ class CommandInterpreter:
             return response
         else:
             return random.choice(responses["error"])
-
-
-
-

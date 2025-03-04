@@ -9,10 +9,9 @@ import torch.nn.functional as F
 import numpy as np
 import inspect
 
-from models import PointCloudNetwork, PointCloudGenerator
+from models import PointCloudNetwork, PointCloudGenerator, EnhancedPointCloudGenerator
 from data_utils import SimpleTokenizer
 from shape_generation import generate_point_cloud
-
 
 class ShapeAI:
     def __init__(self, classifier=None, generator=None, tokenizer=None, shape_types=None, device='cuda'):
@@ -126,6 +125,62 @@ class ShapeAI:
                     raise e
         
         return point_cloud
+    
+    def generate_shape(self, description):
+        """
+        Generate a point cloud based on a text description.
+        
+        Args:
+            description: Text description of the desired shape
+            
+        Returns:
+            Tensor containing the generated point cloud
+        """
+        if not self.generator or not self.tokenizer:
+            raise RuntimeError("Generator model or tokenizer not initialized")
+            
+        # Convert description to tensor
+        tokens = self.tokenizer.encode(description.lower())
+        token_tensor = torch.tensor(tokens).unsqueeze(0).to(self.device)  # Add batch dimension
+        
+        # Generate point cloud
+        self.generator.eval()
+        with torch.no_grad():
+            try:
+                # Generate points using the model
+                result = self.generator(token_tensor)
+                
+                # Handle different return types (handle both tensor and tuple returns)
+                if isinstance(result, tuple):
+                    points = result[0]  # Extract the point cloud from the tuple
+                else:
+                    points = result
+                    
+                # Check if points is still a tuple (nested tuple case)
+                if isinstance(points, tuple):
+                    points = points[0]
+                
+                # Check if the points are empty
+                if points is None or (hasattr(points, 'numel') and points.numel() == 0):
+                    # Extract shape type from description
+                    shape_type = None
+                    for shape in self.shape_types:
+                        if shape in description.lower():
+                            shape_type = shape
+                            break
+                    
+                    if shape_type:
+                        # Generate basic shape
+                        points = generate_point_cloud(shape_type, num_points=1024)
+                        points = torch.tensor(points).float().unsqueeze(0).to(self.device)
+                    else:
+                        raise ValueError(f"Could not determine shape type from description: {description}")
+                
+                return points
+                
+            except Exception as e:
+                print(f"Error in shape generation: {e}")
+                raise
     
     def _parse_shape_params(self, text):
         """Parse shape parameters from text
